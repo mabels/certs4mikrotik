@@ -110,7 +110,7 @@ Each router entry in the configuration requires:
 The default schedule runs at 2 AM on Sundays and Wednesdays:
 
 ```yaml
-schedule: 0 2 Applications Library System Users Volumes bin cores dev etc home nix opt private sbin tmp usr var Applications Library System Users Volumes bin cores dev etc home nix opt private sbin tmp usr var 0,3
+schedule: 0 2 * * 0,3
 ```
 
 Modify this in `k8s/cronjob.yaml` to fit your needs.
