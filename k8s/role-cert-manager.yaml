@@ -1,0 +1,39 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"annotations":{},"name":"cert-manager-controller","namespace":"default"},"rules":[{"apiGroups":[""],"resources":["secrets"],"verbs":["get","list"]},{"apiGroups":["cert-manager.io"],"resources":["certificates"],"verbs":["get","list","create","update","patch"]},{"apiGroups":["externaldns.k8s.io"],"resources":["dnsendpoints"],"verbs":["get","list","create","update","patch"]}]}
+  creationTimestamp: "2025-10-16T14:31:12Z"
+  name: cert-manager-controller
+  namespace: default
+  resourceVersion: "3180349"
+  uid: 1cd821e8-733a-4b47-a227-28f5063a6a0b
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - patch
+- apiGroups:
+  - externaldns.k8s.io
+  resources:
+  - dnsendpoints
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - patch

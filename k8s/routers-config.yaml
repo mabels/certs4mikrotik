@@ -1,0 +1,35 @@
+apiVersion: v1
+data:
+  routers.json: |
+    {
+      "routers": [
+        {
+          "name": "mam-hh-gwx86",
+          "host": "192.168.128.2",
+          "port": "8728",
+          "username": "admin",
+          "cert_secret": "mam-hh-gwx86-tls",
+          "password_secret": "mam-hh-gwx86-credentials",
+          "cert_name": "mam-hh-gwx86-cert"
+        },
+        {
+          "name": "mam-hh-gwax3",
+          "host": "192.168.128.3",
+          "port": "8728",
+          "username": "admin",
+          "cert_secret": "mam-hh-gwax3-tls",
+          "password_secret": "mam-hh-gwax3-credentials",
+          "cert_name": "mam-hh-gwax3-cert"
+        }
+      ]
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"routers.json":"{\n  \"routers\": [\n    {\n      \"name\": \"mam-hh-gwx86\",\n      \"host\": \"192.168.128.2\",\n      \"port\": \"8728\",\n      \"username\": \"admin\",\n      \"cert_secret\": \"mam-hh-gwx86-tls\",\n      \"password_secret\": \"mam-hh-gwx86-credentials\",\n      \"cert_name\": \"mam-hh-gwx86-cert\"\n    },\n    {\n      \"name\": \"mam-hh-gwax3\",\n      \"host\": \"192.168.128.3\",\n      \"port\": \"8728\",\n      \"username\": \"admin\",\n      \"cert_secret\": \"mam-hh-gwax3-tls\",\n      \"password_secret\": \"mam-hh-gwax3-credentials\",\n      \"cert_name\": \"mam-hh-gwax3-cert\"\n    }\n  ]\n}\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"mikrotik-routers-config","namespace":"default"}}
+  creationTimestamp: "2025-10-16T14:12:59Z"
+  name: mikrotik-routers-config
+  namespace: default
+  resourceVersion: "3179268"
+  uid: 930a960e-6e82-4a7b-a130-3183de94566a

@@ -1,0 +1,222 @@
+apiVersion: v1
+data:
+  upload-router-complete.py: "#!/usr/bin/env python3\nimport argparse\nimport logging\nimport
+    asyncio\nimport os\nimport sys\nimport json\nimport base64\nimport ssl\nfrom typing
+    import Optional\n\ntry:\n    import librouteros\n    from librouteros.login import
+    plain, token\n    ROUTEROS_AVAILABLE = True\nexcept ImportError:\n    ROUTEROS_AVAILABLE
+    = False\n\ntry:\n    from kubernetes import client, config\n    from kubernetes.client.rest
+    import ApiException\n    K8S_AVAILABLE = True\nexcept ImportError:\n    K8S_AVAILABLE
+    = False\n\nlogging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s
+    - %(message)s')\nlogger = logging.getLogger(__name__)\n\nclass MikroTikCertUploader:\n
+    \   def __init__(self, host: str, username: str = \"admin\", password: str = \"\",
+    port: int = 8728, ssl_port: int = 8729):\n        self.host = host\n        self.username
+    = username\n        self.password = password\n        self.port = port\n        self.ssl_port
+    = ssl_port\n        self.api_connection = None\n\n    def connect_api(self) ->
+    bool:\n        if not ROUTEROS_AVAILABLE:\n            logger.error(\"librouteros
+    not available\")\n            return False\n        \n        # Try SSL first
+    (port 8729)\n        try:\n            logger.info(f\"Attempting SSL connection
+    to MikroTik API at {self.host}:{self.ssl_port}\")\n            \n            #
+    Create SSL context that doesn't verify certificates\n            ssl_context =
+    ssl.create_default_context()\n            ssl_context.check_hostname = False\n
+    \           ssl_context.verify_mode = ssl.CERT_NONE\n            \n            self.api_connection
+    = librouteros.connect(\n                username=self.username,\n                password=self.password,\n
+    \               host=self.host,\n                port=self.ssl_port,\n                ssl_wrapper=ssl_context.wrap_socket,\n
+    \               login_method=plain\n            )\n            logger.info(\"Successfully
+    connected to RouterOS API via SSL\")\n            return True\n        except
+    Exception as e:\n            logger.warning(f\"SSL connection failed: {e}\")\n
+    \           logger.info(f\"Attempting plain connection to MikroTik API at {self.host}:{self.port}\")\n
+    \           \n            # Try plain connection (port 8728)\n            try:\n
+    \               self.api_connection = librouteros.connect(\n                    username=self.username,\n
+    \                   password=self.password,\n                    host=self.host,\n
+    \                   port=self.port\n                )\n                logger.info(\"Successfully
+    connected to RouterOS API via plain connection\")\n                return True\n
+    \           except Exception as e2:\n                logger.error(f\"Failed to
+    connect to RouterOS API (both SSL and plain): SSL error: {e}, Plain error: {e2}\")\n
+    \               return False\n\n    def disconnect_api(self):\n        if self.api_connection:\n
+    \           try:\n                self.api_connection.close()\n                logger.info(\"Disconnected
+    from RouterOS API\")\n            except Exception as e:\n                logger.warning(f\"Error
+    disconnecting from API: {e}\")\n\n    async def certificate_import(self, filename):\n
+    \       try:\n            response_generator = self.api_connection.path('certificate')('import',
+    **{\n                'file-name': filename,\n                'trusted': 'yes'\n
+    \           })\n            for response in response_generator:\n                logger.debug(f\"Import
+    response: {response}\")\n        except Exception as e:\n            logger.error(f\"Error
+    importing certificate: {e}\")\n\n    async def upload_via_api(self, cert_content:
+    str, key_content: str, cert_name: str = \"uploaded-cert\") -> bool:\n        if
+    not self.connect_api():\n            return False\n        try:\n            cert_filename
+    = f\"{cert_name}.crt\"\n            key_filename = f\"{cert_name}.key\"\n\n            #
+    Clean up existing files\n            try:\n                self.api_connection.path('file').remove(cert_filename)\n
+    \               self.api_connection.path('file').remove(key_filename)\n            except:\n
+    \               pass\n\n            # Upload files\n            logger.info(f\"Uploading
+    certificate as {cert_filename}\")\n            self.api_connection.path('file').add(name=cert_filename,
+    contents=cert_content)\n\n            logger.info(f\"Uploading private key as
+    {key_filename}\")\n            self.api_connection.path('file').add(name=key_filename,
+    contents=key_content)\n\n            # Import certificate\n            logger.info(f\"Importing
+    certificate {cert_name}\")\n            await self.certificate_import(cert_filename)\n
+    \           await self.certificate_import(key_filename)\n\n            logger.info(f\"Successfully
+    uploaded certificate {cert_name}\")\n            return True\n        except Exception
+    as e:\n            logger.error(f\"Failed to upload certificate via API: {e}\")\n
+    \           return False\n        finally:\n            self.disconnect_api()\n\nclass
+    K8sResourceManager:\n    def __init__(self, namespace: str = \"default\"):\n        if
+    not K8S_AVAILABLE:\n            raise Exception(\"kubernetes python client not
+    available\")\n        \n        # Load in-cluster config\n        try:\n            config.load_incluster_config()\n
+    \           logger.info(\"Loaded in-cluster Kubernetes configuration\")\n        except:\n
+    \           # Fallback to kubeconfig for local testing\n            config.load_kube_config()\n
+    \           logger.info(\"Loaded kubeconfig configuration\")\n        \n        self.v1
+    = client.CoreV1Api()\n        self.custom_api = client.CustomObjectsApi()\n        self.namespace
+    = namespace\n    \n    def get_secret(self, secret_name: str) -> dict:\n        \"\"\"Fetch
+    a secret from Kubernetes\"\"\"\n        try:\n            logger.info(f\"Fetching
+    secret: {secret_name} from namespace: {self.namespace}\")\n            secret
+    = self.v1.read_namespaced_secret(secret_name, self.namespace)\n            return
+    secret.data\n        except Exception as e:\n            logger.error(f\"Failed
+    to fetch secret {secret_name}: {e}\")\n            raise\n    \n    def get_tls_cert(self,
+    secret_name: str) -> tuple[str, str]:\n        \"\"\"Fetch TLS certificate and
+    key from a Kubernetes secret\"\"\"\n        secret_data = self.get_secret(secret_name)\n
+    \       \n        # Decode base64 encoded cert and key\n        cert_b64 = secret_data.get('tls.crt')\n
+    \       key_b64 = secret_data.get('tls.key')\n        \n        if not cert_b64
+    or not key_b64:\n            raise Exception(f\"Secret {secret_name} doesn't contain
+    tls.crt or tls.key\")\n        \n        cert = base64.b64decode(cert_b64).decode('utf-8')\n
+    \       key = base64.b64decode(key_b64).decode('utf-8')\n        \n        return
+    cert, key\n    \n    def get_password(self, secret_name: str, key: str = 'password')
+    -> str:\n        \"\"\"Fetch password from a Kubernetes secret\"\"\"\n        secret_data
+    = self.get_secret(secret_name)\n        \n        password_b64 = secret_data.get(key)\n
+    \       if not password_b64:\n            raise Exception(f\"Secret {secret_name}
+    doesn't contain key: {key}\")\n        \n        password = base64.b64decode(password_b64).decode('utf-8')\n
+    \       return password\n    \n    def ensure_certificate(self, router_config:
+    dict, issuer_name: str = \"letsencrypt-prod\", domain_suffix: str = \".adviser.com\")
+    -> bool:\n        \"\"\"Create or update cert-manager Certificate resource\"\"\"\n
+    \       router_name = router_config['name']\n        cert_name = router_config['cert_name']\n
+    \       secret_name = router_config['cert_secret']\n        dns_name = f\"{router_name}{domain_suffix}\"\n
+    \       \n        certificate = {\n            \"apiVersion\": \"cert-manager.io/v1\",\n
+    \           \"kind\": \"Certificate\",\n            \"metadata\": {\n                \"name\":
+    cert_name,\n                \"namespace\": self.namespace\n            },\n            \"spec\":
+    {\n                \"secretName\": secret_name,\n                \"issuerRef\":
+    {\n                    \"group\": \"cert-manager.io\",\n                    \"kind\":
+    \"Issuer\",\n                    \"name\": issuer_name\n                },\n                \"dnsNames\":
+    [dns_name]\n            }\n        }\n        \n        try:\n            # Try
+    to get existing certificate\n            try:\n                existing = self.custom_api.get_namespaced_custom_object(\n
+    \                   group=\"cert-manager.io\",\n                    version=\"v1\",\n
+    \                   namespace=self.namespace,\n                    plural=\"certificates\",\n
+    \                   name=cert_name\n                )\n                logger.info(f\"Certificate
+    {cert_name} already exists, updating...\")\n                \n                #
+    Update existing certificate\n                self.custom_api.patch_namespaced_custom_object(\n
+    \                   group=\"cert-manager.io\",\n                    version=\"v1\",\n
+    \                   namespace=self.namespace,\n                    plural=\"certificates\",\n
+    \                   name=cert_name,\n                    body=certificate\n                )\n
+    \               logger.info(f\"✅ Updated Certificate: {cert_name}\")\n                return
+    True\n                \n            except ApiException as e:\n                if
+    e.status == 404:\n                    # Certificate doesn't exist, create it\n
+    \                   logger.info(f\"Creating new Certificate: {cert_name}\")\n
+    \                   self.custom_api.create_namespaced_custom_object(\n                        group=\"cert-manager.io\",\n
+    \                       version=\"v1\",\n                        namespace=self.namespace,\n
+    \                       plural=\"certificates\",\n                        body=certificate\n
+    \                   )\n                    logger.info(f\"✅ Created Certificate:
+    {cert_name}\")\n                    return True\n                else:\n                    raise\n
+    \                   \n        except Exception as e:\n            logger.error(f\"Failed
+    to ensure Certificate {cert_name}: {e}\")\n            return False\n    \n    def
+    ensure_dns_endpoint(self, router_config: dict, domain_suffix: str = \".adviser.com\")
+    -> bool:\n        \"\"\"Create or update external-dns DNSEndpoint resource\"\"\"\n
+    \       router_name = router_config['name']\n        host = router_config['host']\n
+    \       dns_endpoint_name = f\"{router_name}-dns\"\n        dns_name = f\"{router_name}{domain_suffix}\"\n
+    \       \n        dns_endpoint = {\n            \"apiVersion\": \"externaldns.k8s.io/v1alpha1\",\n
+    \           \"kind\": \"DNSEndpoint\",\n            \"metadata\": {\n                \"name\":
+    dns_endpoint_name,\n                \"namespace\": self.namespace\n            },\n
+    \           \"spec\": {\n                \"endpoints\": [\n                    {\n
+    \                       \"dnsName\": dns_name,\n                        \"recordType\":
+    \"A\",\n                        \"targets\": [host]\n                    }\n                ]\n
+    \           }\n        }\n        \n        try:\n            # Try to get existing
+    DNSEndpoint\n            try:\n                existing = self.custom_api.get_namespaced_custom_object(\n
+    \                   group=\"externaldns.k8s.io\",\n                    version=\"v1alpha1\",\n
+    \                   namespace=self.namespace,\n                    plural=\"dnsendpoints\",\n
+    \                   name=dns_endpoint_name\n                )\n                logger.info(f\"DNSEndpoint
+    {dns_endpoint_name} already exists, updating...\")\n                \n                #
+    Update existing DNSEndpoint\n                self.custom_api.patch_namespaced_custom_object(\n
+    \                   group=\"externaldns.k8s.io\",\n                    version=\"v1alpha1\",\n
+    \                   namespace=self.namespace,\n                    plural=\"dnsendpoints\",\n
+    \                   name=dns_endpoint_name,\n                    body=dns_endpoint\n
+    \               )\n                logger.info(f\"✅ Updated DNSEndpoint: {dns_endpoint_name}\")\n
+    \               return True\n                \n            except ApiException
+    as e:\n                if e.status == 404:\n                    # DNSEndpoint
+    doesn't exist, create it\n                    logger.info(f\"Creating new DNSEndpoint:
+    {dns_endpoint_name}\")\n                    self.custom_api.create_namespaced_custom_object(\n
+    \                       group=\"externaldns.k8s.io\",\n                        version=\"v1alpha1\",\n
+    \                       namespace=self.namespace,\n                        plural=\"dnsendpoints\",\n
+    \                       body=dns_endpoint\n                    )\n                    logger.info(f\"✅
+    Created DNSEndpoint: {dns_endpoint_name}\")\n                    return True\n
+    \               else:\n                    raise\n                    \n        except
+    Exception as e:\n            logger.error(f\"Failed to ensure DNSEndpoint {dns_endpoint_name}:
+    {e}\")\n            return False\n\nasync def process_router(router_config: dict,
+    k8s_manager: K8sResourceManager, ensure_resources: bool = True, issuer_name: str
+    = \"letsencrypt-prod\", domain_suffix: str = \".adviser.com\") -> bool:\n    \"\"\"Process
+    a single router from configuration\"\"\"\n    router_name = router_config['name']\n
+    \   \n    print(f\"\\n{'='*60}\")\n    print(f\"Processing: {router_name}\")\n
+    \   print(f\"Host: {router_config['host']}:{router_config['port']}\")\n    print(f\"Certificate
+    Secret: {router_config['cert_secret']}\")\n    print(f\"Password Secret: {router_config['password_secret']}\")\n
+    \   print(f\"{'='*60}\\n\")\n    \n    try:\n        # Step 1: Ensure Kubernetes
+    resources exist\n        if ensure_resources:\n            logger.info(\"Ensuring
+    Kubernetes resources...\")\n            cert_ok = k8s_manager.ensure_certificate(router_config,
+    issuer_name, domain_suffix)\n            dns_ok = k8s_manager.ensure_dns_endpoint(router_config,
+    domain_suffix)\n            \n            if not cert_ok or not dns_ok:\n                logger.warning(\"Some
+    resources failed to create/update, but continuing...\")\n        \n        # Step
+    2: Fetch password from Kubernetes secret\n        logger.info(f\"Fetching password
+    from secret: {router_config['password_secret']}\")\n        password = k8s_manager.get_password(router_config['password_secret'])\n
+    \       \n        # Step 3: Fetch TLS certificate from Kubernetes secret\n        logger.info(f\"Fetching
+    TLS certificate from secret: {router_config['cert_secret']}\")\n        cert_content,
+    key_content = k8s_manager.get_tls_cert(router_config['cert_secret'])\n        \n
+    \       # Step 4: Upload to router\n        ssl_port = int(router_config.get('ssl_port',
+    8729))\n        uploader = MikroTikCertUploader(\n            host=router_config['host'],\n
+    \           username=router_config['username'],\n            password=password,\n
+    \           port=int(router_config['port']),\n            ssl_port=ssl_port\n
+    \       )\n        \n        success = await uploader.upload_via_api(\n            cert_content,
+    \n            key_content, \n            router_config['cert_name']\n        )\n
+    \       \n        if success:\n            print(f\"✅ Successfully uploaded certificate
+    to {router_name}\\n\")\n        else:\n            print(f\"❌ Failed to upload
+    certificate to {router_name}\\n\")\n            \n        return success\n    except
+    Exception as e:\n        logger.error(f\"Failed to process router {router_name}:
+    {e}\")\n        print(f\"❌ Failed to process {router_name}: {e}\\n\")\n        return
+    False\n\nasync def main():\n    parser = argparse.ArgumentParser(description='Upload
+    SSL certificates to MikroTik routers')\n    parser.add_argument('--config', required=True,
+    help='Path to routers config JSON file')\n    parser.add_argument('--namespace',
+    default='default', help='Kubernetes namespace')\n    parser.add_argument('--ensure-resources',
+    action='store_true', default=True, help='Create/update Certificate and DNSEndpoint
+    resources')\n    parser.add_argument('--skip-resources', action='store_true',
+    help='Skip creating/updating Certificate and DNSEndpoint resources')\n    parser.add_argument('--issuer',
+    default='letsencrypt-prod', help='cert-manager Issuer name')\n    parser.add_argument('--domain-suffix',
+    default='.adviser.com', help='Domain suffix for DNS names')\n    parser.add_argument('--verbose',
+    '-v', action='store_true')\n    \n    args = parser.parse_args()\n    \n    if
+    args.verbose:\n        logging.getLogger().setLevel(logging.DEBUG)\n    \n    #
+    Check if kubernetes client is available\n    if not K8S_AVAILABLE:\n        logger.error(\"kubernetes
+    python client not available. Install with: pip install kubernetes\")\n        sys.exit(1)\n
+    \   \n    # Load router configuration\n    try:\n        with open(args.config,
+    'r') as f:\n            config_data = json.load(f)\n    except Exception as e:\n
+    \       logger.error(f\"Failed to load config file: {e}\")\n        sys.exit(1)\n
+    \   \n    routers = config_data.get('routers', [])\n    \n    if not routers:\n
+    \       logger.error(\"No routers found in configuration\")\n        sys.exit(1)\n
+    \   \n    # Initialize Kubernetes resource manager\n    try:\n        k8s_manager
+    = K8sResourceManager(namespace=args.namespace)\n    except Exception as e:\n        logger.error(f\"Failed
+    to initialize Kubernetes client: {e}\")\n        sys.exit(1)\n    \n    ensure_resources
+    = args.ensure_resources and not args.skip_resources\n    \n    print(f\"\\n{'='*60}\")\n
+    \   print(f\"Starting certificate upload for {len(routers)} router(s)\")\n    print(f\"Kubernetes
+    namespace: {args.namespace}\")\n    print(f\"Issuer: {args.issuer}\")\n    print(f\"Domain
+    suffix: {args.domain_suffix}\")\n    print(f\"Auto-create resources: {ensure_resources}\")\n
+    \   print(f\"{'='*60}\\n\")\n    \n    # Process each router\n    results = []\n
+    \   for router in routers:\n        success = await process_router(\n            router,
+    \n            k8s_manager, \n            ensure_resources=ensure_resources,\n
+    \           issuer_name=args.issuer,\n            domain_suffix=args.domain_suffix\n
+    \       )\n        results.append((router['name'], success))\n    \n    # Summary\n
+    \   print(f\"\\n{'='*60}\")\n    print(\"SUMMARY\")\n    print(f\"{'='*60}\")\n
+    \   \n    for router_name, success in results:\n        status = \"✅ SUCCESS\"
+    if success else \"❌ FAILED\"\n        print(f\"{router_name}: {status}\")\n    \n
+    \   print(f\"{'='*60}\\n\")\n    \n    # Exit with error if any failed\n    if
+    not all(success for _, success in results):\n        sys.exit(1)\n    \n    logger.info(\"All
+    certificate uploads completed successfully!\")\n\nif __name__ == '__main__':\n
+    \   asyncio.run(main())\n"
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"upload-router-complete.py":"#!/usr/bin/env python3\nimport argparse\nimport logging\nimport asyncio\nimport os\nimport sys\nimport json\nimport base64\nimport ssl\nfrom typing import Optional\n\ntry:\n    import librouteros\n    from librouteros.login import plain, token\n    ROUTEROS_AVAILABLE = True\nexcept ImportError:\n    ROUTEROS_AVAILABLE = False\n\ntry:\n    from kubernetes import client, config\n    from kubernetes.client.rest import ApiException\n    K8S_AVAILABLE = True\nexcept ImportError:\n    K8S_AVAILABLE = False\n\nlogging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')\nlogger = logging.getLogger(__name__)\n\nclass MikroTikCertUploader:\n    def __init__(self, host: str, username: str = \"admin\", password: str = \"\", port: int = 8728, ssl_port: int = 8729):\n        self.host = host\n        self.username = username\n        self.password = password\n        self.port = port\n        self.ssl_port = ssl_port\n        self.api_connection = None\n\n    def connect_api(self) -\u003e bool:\n        if not ROUTEROS_AVAILABLE:\n            logger.error(\"librouteros not available\")\n            return False\n        \n        # Try SSL first (port 8729)\n        try:\n            logger.info(f\"Attempting SSL connection to MikroTik API at {self.host}:{self.ssl_port}\")\n            \n            # Create SSL context that doesn't verify certificates\n            ssl_context = ssl.create_default_context()\n            ssl_context.check_hostname = False\n            ssl_context.verify_mode = ssl.CERT_NONE\n            \n            self.api_connection = librouteros.connect(\n                username=self.username,\n                password=self.password,\n                host=self.host,\n                port=self.ssl_port,\n                ssl_wrapper=ssl_context.wrap_socket,\n                login_method=plain\n            )\n            logger.info(\"Successfully connected to RouterOS API via SSL\")\n            return True\n        except Exception as e:\n            logger.warning(f\"SSL connection failed: {e}\")\n            logger.info(f\"Attempting plain connection to MikroTik API at {self.host}:{self.port}\")\n            \n            # Try plain connection (port 8728)\n            try:\n                self.api_connection = librouteros.connect(\n                    username=self.username,\n                    password=self.password,\n                    host=self.host,\n                    port=self.port\n                )\n                logger.info(\"Successfully connected to RouterOS API via plain connection\")\n                return True\n            except Exception as e2:\n                logger.error(f\"Failed to connect to RouterOS API (both SSL and plain): SSL error: {e}, Plain error: {e2}\")\n                return False\n\n    def disconnect_api(self):\n        if self.api_connection:\n            try:\n                self.api_connection.close()\n                logger.info(\"Disconnected from RouterOS API\")\n            except Exception as e:\n                logger.warning(f\"Error disconnecting from API: {e}\")\n\n    async def certificate_import(self, filename):\n        try:\n            response_generator = self.api_connection.path('certificate')('import', **{\n                'file-name': filename,\n                'trusted': 'yes'\n            })\n            for response in response_generator:\n                logger.debug(f\"Import response: {response}\")\n        except Exception as e:\n            logger.error(f\"Error importing certificate: {e}\")\n\n    async def upload_via_api(self, cert_content: str, key_content: str, cert_name: str = \"uploaded-cert\") -\u003e bool:\n        if not self.connect_api():\n            return False\n        try:\n            cert_filename = f\"{cert_name}.crt\"\n            key_filename = f\"{cert_name}.key\"\n\n            # Clean up existing files\n            try:\n                self.api_connection.path('file').remove(cert_filename)\n                self.api_connection.path('file').remove(key_filename)\n            except:\n                pass\n\n            # Upload files\n            logger.info(f\"Uploading certificate as {cert_filename}\")\n            self.api_connection.path('file').add(name=cert_filename, contents=cert_content)\n\n            logger.info(f\"Uploading private key as {key_filename}\")\n            self.api_connection.path('file').add(name=key_filename, contents=key_content)\n\n            # Import certificate\n            logger.info(f\"Importing certificate {cert_name}\")\n            await self.certificate_import(cert_filename)\n            await self.certificate_import(key_filename)\n\n            logger.info(f\"Successfully uploaded certificate {cert_name}\")\n            return True\n        except Exception as e:\n            logger.error(f\"Failed to upload certificate via API: {e}\")\n            return False\n        finally:\n            self.disconnect_api()\n\nclass K8sResourceManager:\n    def __init__(self, namespace: str = \"default\"):\n        if not K8S_AVAILABLE:\n            raise Exception(\"kubernetes python client not available\")\n        \n        # Load in-cluster config\n        try:\n            config.load_incluster_config()\n            logger.info(\"Loaded in-cluster Kubernetes configuration\")\n        except:\n            # Fallback to kubeconfig for local testing\n            config.load_kube_config()\n            logger.info(\"Loaded kubeconfig configuration\")\n        \n        self.v1 = client.CoreV1Api()\n        self.custom_api = client.CustomObjectsApi()\n        self.namespace = namespace\n    \n    def get_secret(self, secret_name: str) -\u003e dict:\n        \"\"\"Fetch a secret from Kubernetes\"\"\"\n        try:\n            logger.info(f\"Fetching secret: {secret_name} from namespace: {self.namespace}\")\n            secret = self.v1.read_namespaced_secret(secret_name, self.namespace)\n            return secret.data\n        except Exception as e:\n            logger.error(f\"Failed to fetch secret {secret_name}: {e}\")\n            raise\n    \n    def get_tls_cert(self, secret_name: str) -\u003e tuple[str, str]:\n        \"\"\"Fetch TLS certificate and key from a Kubernetes secret\"\"\"\n        secret_data = self.get_secret(secret_name)\n        \n        # Decode base64 encoded cert and key\n        cert_b64 = secret_data.get('tls.crt')\n        key_b64 = secret_data.get('tls.key')\n        \n        if not cert_b64 or not key_b64:\n            raise Exception(f\"Secret {secret_name} doesn't contain tls.crt or tls.key\")\n        \n        cert = base64.b64decode(cert_b64).decode('utf-8')\n        key = base64.b64decode(key_b64).decode('utf-8')\n        \n        return cert, key\n    \n    def get_password(self, secret_name: str, key: str = 'password') -\u003e str:\n        \"\"\"Fetch password from a Kubernetes secret\"\"\"\n        secret_data = self.get_secret(secret_name)\n        \n        password_b64 = secret_data.get(key)\n        if not password_b64:\n            raise Exception(f\"Secret {secret_name} doesn't contain key: {key}\")\n        \n        password = base64.b64decode(password_b64).decode('utf-8')\n        return password\n    \n    def ensure_certificate(self, router_config: dict, issuer_name: str = \"letsencrypt-prod\", domain_suffix: str = \".adviser.com\") -\u003e bool:\n        \"\"\"Create or update cert-manager Certificate resource\"\"\"\n        router_name = router_config['name']\n        cert_name = router_config['cert_name']\n        secret_name = router_config['cert_secret']\n        dns_name = f\"{router_name}{domain_suffix}\"\n        \n        certificate = {\n            \"apiVersion\": \"cert-manager.io/v1\",\n            \"kind\": \"Certificate\",\n            \"metadata\": {\n                \"name\": cert_name,\n                \"namespace\": self.namespace\n            },\n            \"spec\": {\n                \"secretName\": secret_name,\n                \"issuerRef\": {\n                    \"group\": \"cert-manager.io\",\n                    \"kind\": \"Issuer\",\n                    \"name\": issuer_name\n                },\n                \"dnsNames\": [dns_name]\n            }\n        }\n        \n        try:\n            # Try to get existing certificate\n            try:\n                existing = self.custom_api.get_namespaced_custom_object(\n                    group=\"cert-manager.io\",\n                    version=\"v1\",\n                    namespace=self.namespace,\n                    plural=\"certificates\",\n                    name=cert_name\n                )\n                logger.info(f\"Certificate {cert_name} already exists, updating...\")\n                \n                # Update existing certificate\n                self.custom_api.patch_namespaced_custom_object(\n                    group=\"cert-manager.io\",\n                    version=\"v1\",\n                    namespace=self.namespace,\n                    plural=\"certificates\",\n                    name=cert_name,\n                    body=certificate\n                )\n                logger.info(f\"✅ Updated Certificate: {cert_name}\")\n                return True\n                \n            except ApiException as e:\n                if e.status == 404:\n                    # Certificate doesn't exist, create it\n                    logger.info(f\"Creating new Certificate: {cert_name}\")\n                    self.custom_api.create_namespaced_custom_object(\n                        group=\"cert-manager.io\",\n                        version=\"v1\",\n                        namespace=self.namespace,\n                        plural=\"certificates\",\n                        body=certificate\n                    )\n                    logger.info(f\"✅ Created Certificate: {cert_name}\")\n                    return True\n                else:\n                    raise\n                    \n        except Exception as e:\n            logger.error(f\"Failed to ensure Certificate {cert_name}: {e}\")\n            return False\n    \n    def ensure_dns_endpoint(self, router_config: dict, domain_suffix: str = \".adviser.com\") -\u003e bool:\n        \"\"\"Create or update external-dns DNSEndpoint resource\"\"\"\n        router_name = router_config['name']\n        host = router_config['host']\n        dns_endpoint_name = f\"{router_name}-dns\"\n        dns_name = f\"{router_name}{domain_suffix}\"\n        \n        dns_endpoint = {\n            \"apiVersion\": \"externaldns.k8s.io/v1alpha1\",\n            \"kind\": \"DNSEndpoint\",\n            \"metadata\": {\n                \"name\": dns_endpoint_name,\n                \"namespace\": self.namespace\n            },\n            \"spec\": {\n                \"endpoints\": [\n                    {\n                        \"dnsName\": dns_name,\n                        \"recordType\": \"A\",\n                        \"targets\": [host]\n                    }\n                ]\n            }\n        }\n        \n        try:\n            # Try to get existing DNSEndpoint\n            try:\n                existing = self.custom_api.get_namespaced_custom_object(\n                    group=\"externaldns.k8s.io\",\n                    version=\"v1alpha1\",\n                    namespace=self.namespace,\n                    plural=\"dnsendpoints\",\n                    name=dns_endpoint_name\n                )\n                logger.info(f\"DNSEndpoint {dns_endpoint_name} already exists, updating...\")\n                \n                # Update existing DNSEndpoint\n                self.custom_api.patch_namespaced_custom_object(\n                    group=\"externaldns.k8s.io\",\n                    version=\"v1alpha1\",\n                    namespace=self.namespace,\n                    plural=\"dnsendpoints\",\n                    name=dns_endpoint_name,\n                    body=dns_endpoint\n                )\n                logger.info(f\"✅ Updated DNSEndpoint: {dns_endpoint_name}\")\n                return True\n                \n            except ApiException as e:\n                if e.status == 404:\n                    # DNSEndpoint doesn't exist, create it\n                    logger.info(f\"Creating new DNSEndpoint: {dns_endpoint_name}\")\n                    self.custom_api.create_namespaced_custom_object(\n                        group=\"externaldns.k8s.io\",\n                        version=\"v1alpha1\",\n                        namespace=self.namespace,\n                        plural=\"dnsendpoints\",\n                        body=dns_endpoint\n                    )\n                    logger.info(f\"✅ Created DNSEndpoint: {dns_endpoint_name}\")\n                    return True\n                else:\n                    raise\n                    \n        except Exception as e:\n            logger.error(f\"Failed to ensure DNSEndpoint {dns_endpoint_name}: {e}\")\n            return False\n\nasync def process_router(router_config: dict, k8s_manager: K8sResourceManager, ensure_resources: bool = True, issuer_name: str = \"letsencrypt-prod\", domain_suffix: str = \".adviser.com\") -\u003e bool:\n    \"\"\"Process a single router from configuration\"\"\"\n    router_name = router_config['name']\n    \n    print(f\"\\n{'='*60}\")\n    print(f\"Processing: {router_name}\")\n    print(f\"Host: {router_config['host']}:{router_config['port']}\")\n    print(f\"Certificate Secret: {router_config['cert_secret']}\")\n    print(f\"Password Secret: {router_config['password_secret']}\")\n    print(f\"{'='*60}\\n\")\n    \n    try:\n        # Step 1: Ensure Kubernetes resources exist\n        if ensure_resources:\n            logger.info(\"Ensuring Kubernetes resources...\")\n            cert_ok = k8s_manager.ensure_certificate(router_config, issuer_name, domain_suffix)\n            dns_ok = k8s_manager.ensure_dns_endpoint(router_config, domain_suffix)\n            \n            if not cert_ok or not dns_ok:\n                logger.warning(\"Some resources failed to create/update, but continuing...\")\n        \n        # Step 2: Fetch password from Kubernetes secret\n        logger.info(f\"Fetching password from secret: {router_config['password_secret']}\")\n        password = k8s_manager.get_password(router_config['password_secret'])\n        \n        # Step 3: Fetch TLS certificate from Kubernetes secret\n        logger.info(f\"Fetching TLS certificate from secret: {router_config['cert_secret']}\")\n        cert_content, key_content = k8s_manager.get_tls_cert(router_config['cert_secret'])\n        \n        # Step 4: Upload to router\n        ssl_port = int(router_config.get('ssl_port', 8729))\n        uploader = MikroTikCertUploader(\n            host=router_config['host'],\n            username=router_config['username'],\n            password=password,\n            port=int(router_config['port']),\n            ssl_port=ssl_port\n        )\n        \n        success = await uploader.upload_via_api(\n            cert_content, \n            key_content, \n            router_config['cert_name']\n        )\n        \n        if success:\n            print(f\"✅ Successfully uploaded certificate to {router_name}\\n\")\n        else:\n            print(f\"❌ Failed to upload certificate to {router_name}\\n\")\n            \n        return success\n    except Exception as e:\n        logger.error(f\"Failed to process router {router_name}: {e}\")\n        print(f\"❌ Failed to process {router_name}: {e}\\n\")\n        return False\n\nasync def main():\n    parser = argparse.ArgumentParser(description='Upload SSL certificates to MikroTik routers')\n    parser.add_argument('--config', required=True, help='Path to routers config JSON file')\n    parser.add_argument('--namespace', default='default', help='Kubernetes namespace')\n    parser.add_argument('--ensure-resources', action='store_true', default=True, help='Create/update Certificate and DNSEndpoint resources')\n    parser.add_argument('--skip-resources', action='store_true', help='Skip creating/updating Certificate and DNSEndpoint resources')\n    parser.add_argument('--issuer', default='letsencrypt-prod', help='cert-manager Issuer name')\n    parser.add_argument('--domain-suffix', default='.adviser.com', help='Domain suffix for DNS names')\n    parser.add_argument('--verbose', '-v', action='store_true')\n    \n    args = parser.parse_args()\n    \n    if args.verbose:\n        logging.getLogger().setLevel(logging.DEBUG)\n    \n    # Check if kubernetes client is available\n    if not K8S_AVAILABLE:\n        logger.error(\"kubernetes python client not available. Install with: pip install kubernetes\")\n        sys.exit(1)\n    \n    # Load router configuration\n    try:\n        with open(args.config, 'r') as f:\n            config_data = json.load(f)\n    except Exception as e:\n        logger.error(f\"Failed to load config file: {e}\")\n        sys.exit(1)\n    \n    routers = config_data.get('routers', [])\n    \n    if not routers:\n        logger.error(\"No routers found in configuration\")\n        sys.exit(1)\n    \n    # Initialize Kubernetes resource manager\n    try:\n        k8s_manager = K8sResourceManager(namespace=args.namespace)\n    except Exception as e:\n        logger.error(f\"Failed to initialize Kubernetes client: {e}\")\n        sys.exit(1)\n    \n    ensure_resources = args.ensure_resources and not args.skip_resources\n    \n    print(f\"\\n{'='*60}\")\n    print(f\"Starting certificate upload for {len(routers)} router(s)\")\n    print(f\"Kubernetes namespace: {args.namespace}\")\n    print(f\"Issuer: {args.issuer}\")\n    print(f\"Domain suffix: {args.domain_suffix}\")\n    print(f\"Auto-create resources: {ensure_resources}\")\n    print(f\"{'='*60}\\n\")\n    \n    # Process each router\n    results = []\n    for router in routers:\n        success = await process_router(\n            router, \n            k8s_manager, \n            ensure_resources=ensure_resources,\n            issuer_name=args.issuer,\n            domain_suffix=args.domain_suffix\n        )\n        results.append((router['name'], success))\n    \n    # Summary\n    print(f\"\\n{'='*60}\")\n    print(\"SUMMARY\")\n    print(f\"{'='*60}\")\n    \n    for router_name, success in results:\n        status = \"✅ SUCCESS\" if success else \"❌ FAILED\"\n        print(f\"{router_name}: {status}\")\n    \n    print(f\"{'='*60}\\n\")\n    \n    # Exit with error if any failed\n    if not all(success for _, success in results):\n        sys.exit(1)\n    \n    logger.info(\"All certificate uploads completed successfully!\")\n\nif __name__ == '__main__':\n    asyncio.run(main())\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"upload-router-complete-script","namespace":"default"}}
+  creationTimestamp: "2025-10-16T14:31:12Z"
+  name: upload-router-complete-script
+  namespace: default
+  resourceVersion: "3472754"
+  uid: ab376e6c-14a3-4212-a004-2b2c9f444ce0
