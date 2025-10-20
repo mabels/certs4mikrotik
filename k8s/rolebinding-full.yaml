@@ -1,14 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  annotations:
-    kubectl.kubernetes.io/last-applied-configuration: |
-      {"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"annotations":{},"name":"mikrotik-cert-uploader-full","namespace":"default"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":"cert-manager-controller"},"subjects":[{"kind":"ServiceAccount","name":"mikrotik-cert-uploader","namespace":"default"}]}
-  creationTimestamp: "2025-10-16T14:31:12Z"
   name: mikrotik-cert-uploader-full
   namespace: default
-  resourceVersion: "3180350"
-  uid: 55a0b224-59a6-4eea-9cb6-a9cdd5919dc4
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
