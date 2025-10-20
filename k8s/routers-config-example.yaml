@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mikrotik-routers-config
+  namespace: default
+data:
+  routers.json: |
+    {
+      "routers": [
+        {
+          "name": "office-router",
+          "host": "192.168.1.1",
+          "port": "8728",
+          "ssl_port": "8729",
+          "username": "admin",
+          "cert_secret": "office-router-tls",
+          "password_secret": "office-router-credentials",
+          "cert_name": "office-router-cert"
+        },
+        {
+          "name": "home-router",
+          "host": "192.168.2.1",
+          "port": "8728",
+          "ssl_port": "8729",
+          "username": "admin",
+          "cert_secret": "home-router-tls",
+          "password_secret": "home-router-credentials",
+          "cert_name": "home-router-cert"
+        }
+      ]
+    }
