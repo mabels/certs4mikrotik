@@ -200,12 +200,19 @@ kubectl describe certificate <cert-name>
 
 ## License
 
-MIT License - See LICENSE file for details
+Apache License 2.0 - See LICENSE file for details
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+## Acknowledgments
+
+This project was developed with the assistance of Claude Code, an AI-powered coding assistant by Anthropic.
+
 ## Author
 
 Created for automated MikroTik certificate management in Kubernetes environments.
+
+
+**Author:** Meno Abels
