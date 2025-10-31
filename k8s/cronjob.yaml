@@ -17,11 +17,11 @@ spec:
             - |
               set -xe
 
-              # Install Python dependencies
-              pip install librouteros paramiko scp kubernetes
+              # Install certs4mikrotik from PyPI
+              pip install certs4mikrotik
 
-              # Run the complete upload script
-              python3 /scripts/upload-router-complete.py \
+              # Run the certificate upload script
+              cert2mikrotik \
                 --config /config/routers.json \
                 --namespace default \
                 --issuer letsencrypt-prod \
@@ -34,9 +34,6 @@ spec:
             terminationMessagePath: /dev/termination-log
             terminationMessagePolicy: File
             volumeMounts:
-            - mountPath: /scripts
-              name: upload-script
-              readOnly: true
             - mountPath: /config
               name: router-config
               readOnly: true
@@ -48,10 +45,6 @@ spec:
           serviceAccountName: mikrotik-cert-uploader
           terminationGracePeriodSeconds: 30
           volumes:
-          - configMap:
-              defaultMode: 420
-              name: upload-router-complete-script
-            name: upload-script
           - configMap:
               defaultMode: 420
               name: mikrotik-routers-config

@@ -28,11 +28,10 @@ This project automates the process of:
 
 ## Installation
 
-### 1. Clone the repository
+### 1. Install from PyPI
 
 ```bash
-git clone <your-repo-url>
-cd certs4mikrotik
+pip install certs4mikrotik
 ```
 
 ### 2. Configure your routers
@@ -92,7 +91,6 @@ Update the YAML file with your email address and DNS provider credentials before
 ```bash
 kubectl apply -f k8s/service-account.yaml
 kubectl apply -f k8s/routers-config.yaml
-kubectl apply -f k8s/upload-script.yaml
 kubectl apply -f k8s/cronjob.yaml
 ```
 
@@ -166,10 +164,10 @@ By default, the script uses namespace-scoped Issuers. To use a ClusterIssuer, pa
 
 ```bash
 # Using default Issuer
-python3 src/upload-router-complete.py --config routers.json --issuer letsencrypt-prod
+cert2mikrotik --config routers.json --issuer letsencrypt-prod
 
 # Using ClusterIssuer
-python3 src/upload-router-complete.py --config routers.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
+cert2mikrotik --config routers.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
 ```
 
 ### Command-line Options
