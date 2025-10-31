@@ -39,7 +39,7 @@ Repository = "https://github.com/menabe/certs4mikrotik"
 Issues = "https://github.com/menabe/certs4mikrotik/issues"
 
 [project.scripts]
-cert2mikrotik = "certs4mikrotik.cert2mikrotik:main"
+cert2mikrotik = "certs4mikrotik.cert2mikrotik:cli_main"
 
 [tool.setuptools]
 packages = ["certs4mikrotik"]
