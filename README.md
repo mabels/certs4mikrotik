@@ -23,7 +23,7 @@ This project automates the process of:
 - Kubernetes cluster
 - cert-manager installed
 - external-dns configured for your DNS provider
-- Let's Encrypt issuer configured
+- Let's Encrypt Issuer or ClusterIssuer configured
 - MikroTik routers with API access enabled (SSL recommended)
 
 ## Installation
@@ -71,13 +71,21 @@ kubectl create secret generic router1-credentials \
   --from-literal=password='your-router-password'
 ```
 
-### 4. Configure the Let's Encrypt issuer
+### 4. Configure the Let's Encrypt Issuer or ClusterIssuer
 
-Update `k8s/issuer.yaml` with your email address and deploy it:
-
+**Option A:** Namespace-scoped Issuer (default):
 ```bash
-kubectl apply -f k8s/issuer.yaml
+kubectl apply -f k8s/issuer-example.yaml
 ```
+
+**Option B:** Cluster-wide ClusterIssuer:
+```bash
+kubectl apply -f k8s/clusterissuer-example.yaml
+kubectl apply -f k8s/cluster-role-issuers.yaml
+kubectl apply -f k8s/clusterrolebinding-issuers.yaml
+```
+
+Update the YAML file with your email address and DNS provider credentials before applying.
 
 ### 5. Deploy the application
 
@@ -148,6 +156,33 @@ For better security, create a dedicated API user:
 ```
 /user group add name=api-users policy=api,read,write,test
 /user add name=certbot group=api-users password=strong-password
+```
+
+## Usage
+
+### Using Issuer vs ClusterIssuer
+
+By default, the script uses namespace-scoped Issuers. To use a ClusterIssuer, pass the `--issuer-kind` flag:
+
+```bash
+# Using default Issuer
+python3 src/upload-router-complete.py --config routers.json --issuer letsencrypt-prod
+
+# Using ClusterIssuer
+python3 src/upload-router-complete.py --config routers.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
+```
+
+### Command-line Options
+
+```
+--config            Path to routers config JSON file (required)
+--namespace         Kubernetes namespace (default: default)
+--issuer            cert-manager Issuer name (default: letsencrypt-prod)
+--issuer-kind       Issuer kind: Issuer or ClusterIssuer (default: Issuer)
+--domain-suffix     Domain suffix for DNS names (default: .adviser.com)
+--ensure-resources  Create/update Certificate and DNSEndpoint resources (default: true)
+--skip-resources    Skip creating/updating Certificate and DNSEndpoint resources
+--verbose, -v       Enable verbose logging
 ```
 
 ## Manual Testing

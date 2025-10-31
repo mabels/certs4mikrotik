@@ -20,7 +20,11 @@ Wait for cert-manager to be ready:
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
 ```
 
-### 2. Create Let's Encrypt Issuer
+### 2. Create Let's Encrypt Issuer or ClusterIssuer
+
+You can use either a namespace-scoped **Issuer** or a cluster-wide **ClusterIssuer**.
+
+#### Option A: Namespace-scoped Issuer (default)
 
 Edit `k8s/issuer-example.yaml` and update:
 - Your email address
@@ -29,6 +33,23 @@ Edit `k8s/issuer-example.yaml` and update:
 Then apply:
 ```bash
 kubectl apply -f k8s/issuer-example.yaml
+```
+
+#### Option B: Cluster-wide ClusterIssuer
+
+Edit `k8s/clusterissuer-example.yaml` and update:
+- Your email address
+- Your DNS provider credentials
+
+Then apply:
+```bash
+kubectl apply -f k8s/clusterissuer-example.yaml
+```
+
+If using a ClusterIssuer, you must also apply the ClusterRole permissions:
+```bash
+kubectl apply -f k8s/cluster-role-issuers.yaml
+kubectl apply -f k8s/clusterrolebinding-issuers.yaml
 ```
 
 ### 3. Configure Your Routers
@@ -64,12 +85,19 @@ kubectl create secret generic home-router-credentials \
 
 ### 5. Deploy RBAC Resources
 
+For namespace-scoped Issuer:
 ```bash
 kubectl apply -f k8s/service-account.yaml
 kubectl apply -f k8s/role-secret-reader.yaml
 kubectl apply -f k8s/role-cert-manager.yaml
 kubectl apply -f k8s/rolebinding-secrets.yaml
 kubectl apply -f k8s/rolebinding-full.yaml
+```
+
+If using ClusterIssuer, also apply:
+```bash
+kubectl apply -f k8s/cluster-role-issuers.yaml
+kubectl apply -f k8s/clusterrolebinding-issuers.yaml
 ```
 
 ### 6. Deploy the Upload Script

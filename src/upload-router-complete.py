@@ -185,13 +185,13 @@ class K8sResourceManager:
         password = base64.b64decode(password_b64).decode('utf-8')
         return password
     
-    def ensure_certificate(self, router_config: dict, issuer_name: str = "letsencrypt-prod", domain_suffix: str = ".adviser.com") -> bool:
+    def ensure_certificate(self, router_config: dict, issuer_name: str = "letsencrypt-prod", issuer_kind: str = "Issuer", domain_suffix: str = ".adviser.com") -> bool:
         """Create or update cert-manager Certificate resource"""
         router_name = router_config['name']
         cert_name = router_config['cert_name']
         secret_name = router_config['cert_secret']
         dns_name = f"{router_name}{domain_suffix}"
-        
+
         certificate = {
             "apiVersion": "cert-manager.io/v1",
             "kind": "Certificate",
@@ -203,7 +203,7 @@ class K8sResourceManager:
                 "secretName": secret_name,
                 "issuerRef": {
                     "group": "cert-manager.io",
-                    "kind": "Issuer",
+                    "kind": issuer_kind,
                     "name": issuer_name
                 },
                 "dnsNames": [dns_name]
@@ -323,22 +323,22 @@ class K8sResourceManager:
             logger.error(f"Failed to ensure DNSEndpoint {dns_endpoint_name}: {e}")
             return False
 
-async def process_router(router_config: dict, k8s_manager: K8sResourceManager, ensure_resources: bool = True, issuer_name: str = "letsencrypt-prod", domain_suffix: str = ".adviser.com") -> bool:
+async def process_router(router_config: dict, k8s_manager: K8sResourceManager, ensure_resources: bool = True, issuer_name: str = "letsencrypt-prod", issuer_kind: str = "Issuer", domain_suffix: str = ".adviser.com") -> bool:
     """Process a single router from configuration"""
     router_name = router_config['name']
-    
+
     print(f"\n{'='*60}")
     print(f"Processing: {router_name}")
     print(f"Host: {router_config['host']}:{router_config['port']}")
     print(f"Certificate Secret: {router_config['cert_secret']}")
     print(f"Password Secret: {router_config['password_secret']}")
     print(f"{'='*60}\n")
-    
+
     try:
         # Step 1: Ensure Kubernetes resources exist
         if ensure_resources:
             logger.info("Ensuring Kubernetes resources...")
-            cert_ok = k8s_manager.ensure_certificate(router_config, issuer_name, domain_suffix)
+            cert_ok = k8s_manager.ensure_certificate(router_config, issuer_name, issuer_kind, domain_suffix)
             dns_ok = k8s_manager.ensure_dns_endpoint(router_config, domain_suffix)
             
             if not cert_ok or not dns_ok:
@@ -386,6 +386,7 @@ async def main():
     parser.add_argument('--ensure-resources', action='store_true', default=True, help='Create/update Certificate and DNSEndpoint resources')
     parser.add_argument('--skip-resources', action='store_true', help='Skip creating/updating Certificate and DNSEndpoint resources')
     parser.add_argument('--issuer', default='letsencrypt-prod', help='cert-manager Issuer name')
+    parser.add_argument('--issuer-kind', default='Issuer', choices=['Issuer', 'ClusterIssuer'], help='cert-manager Issuer kind (Issuer or ClusterIssuer)')
     parser.add_argument('--domain-suffix', default='.adviser.com', help='Domain suffix for DNS names')
     parser.add_argument('--verbose', '-v', action='store_true')
     
@@ -421,23 +422,25 @@ async def main():
         sys.exit(1)
     
     ensure_resources = args.ensure_resources and not args.skip_resources
-    
+
     print(f"\n{'='*60}")
     print(f"Starting certificate upload for {len(routers)} router(s)")
     print(f"Kubernetes namespace: {args.namespace}")
     print(f"Issuer: {args.issuer}")
+    print(f"Issuer kind: {args.issuer_kind}")
     print(f"Domain suffix: {args.domain_suffix}")
     print(f"Auto-create resources: {ensure_resources}")
     print(f"{'='*60}\n")
-    
+
     # Process each router
     results = []
     for router in routers:
         success = await process_router(
-            router, 
-            k8s_manager, 
+            router,
+            k8s_manager,
             ensure_resources=ensure_resources,
             issuer_name=args.issuer,
+            issuer_kind=args.issuer_kind,
             domain_suffix=args.domain_suffix
         )
         results.append((router['name'], success))
