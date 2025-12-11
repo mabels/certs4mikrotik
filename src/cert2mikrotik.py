@@ -376,10 +376,13 @@ async def process_device(device_config: dict, k8s_manager: K8sResourceManager, e
             return False
 
         # Step 5: Upload certificate to device
+        # For Reolink devices, always use "server" as the device cert name
+        # For other devices, use the configured cert_name
+        device_cert_name = "server" if device_type.lower() == 'reolink' else device_config['cert_name']
         success = await uploader.upload_certificate(
             cert_content,
             key_content,
-            device_config['cert_name']
+            device_cert_name
         )
 
         if success:

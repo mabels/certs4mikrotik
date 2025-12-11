@@ -26,7 +26,7 @@ data:
           "username": "admin",
           "cert_secret": "front-door-camera-tls",
           "password_secret": "front-door-camera-credentials",
-          "cert_name": "server",
+          "cert_name": "front-door-camera-cert",
           "relogin_delay": "5.0"
         },
         {
@@ -37,7 +37,7 @@ data:
           "username": "admin",
           "cert_secret": "garage-camera-tls",
           "password_secret": "garage-camera-credentials",
-          "cert_name": "server"
+          "cert_name": "garage-camera-cert"
         }
       ]
     }
