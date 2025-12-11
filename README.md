@@ -120,7 +120,7 @@ Update the YAML file with your email address and DNS provider credentials before
 
 ```bash
 kubectl apply -f k8s/service-account.yaml
-kubectl apply -f k8s/routers-config.yaml
+kubectl apply -f k8s/certs2mikrotik-config.yaml
 kubectl apply -f k8s/cronjob.yaml
 ```
 
@@ -267,7 +267,7 @@ cert2mikrotik --config devices.json --issuer letsencrypt-prod --issuer-kind Clus
 You can manually trigger a job run:
 
 ```bash
-kubectl create job --from=cronjob/mikrotik-cert-upload manual-test
+kubectl create job --from=cronjob/cert2mikrotik-upload-job manual-test
 kubectl logs -f job/manual-test
 ```
 

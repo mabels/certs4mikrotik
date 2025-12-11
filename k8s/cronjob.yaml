@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: mikrotik-cert-upload
+  name: cert2mikrotik-upload-job
   namespace: default
 spec:
   concurrencyPolicy: Allow
