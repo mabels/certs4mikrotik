@@ -1,22 +1,25 @@
 # Certs4MikroTik
 
-Automated SSL/TLS certificate management and deployment for MikroTik routers using Kubernetes, cert-manager, and external-dns.
+Automated SSL/TLS certificate management and deployment for MikroTik routers and Reolink cameras using Kubernetes, cert-manager, and external-dns.
 
 ## Overview
 
 This project automates the process of:
-1. Creating DNS records for your MikroTik routers via external-dns
+1. Creating DNS records for your devices via external-dns
 2. Requesting and managing SSL/TLS certificates via cert-manager and Let's Encrypt
-3. Uploading certificates to MikroTik routers via their API (SSL or plain)
+3. Uploading certificates to devices:
+   - **MikroTik routers** via RouterOS API (SSL or plain)
+   - **Reolink cameras** via HTTP API
 
 ## Features
 
 - ✅ **Automatic certificate management** - Uses cert-manager to automatically request and renew certificates
 - ✅ **DNS automation** - Creates DNS records automatically via external-dns
-- ✅ **SSL/TLS API support** - Connects via SSL (port 8729) with certificate verification disabled
-- ✅ **Fallback to plain** - Falls back to plain API (port 8728) if SSL is unavailable
+- ✅ **Multi-device support** - Supports both MikroTik routers and Reolink cameras
+- ✅ **SSL/TLS API support** - Connects via SSL (port 8729) with certificate verification disabled for MikroTik
+- ✅ **Fallback to plain** - Falls back to plain API (port 8728) if SSL is unavailable for MikroTik
 - ✅ **Kubernetes native** - Runs as a CronJob in your Kubernetes cluster
-- ✅ **Multiple routers** - Manages certificates for multiple routers from a single configuration
+- ✅ **Multiple devices** - Manages certificates for multiple devices from a single configuration
 
 ## Prerequisites
 
@@ -24,50 +27,77 @@ This project automates the process of:
 - cert-manager installed
 - external-dns configured for your DNS provider
 - Let's Encrypt Issuer or ClusterIssuer configured
-- MikroTik routers with API access enabled (SSL recommended)
+- **For MikroTik:** Routers with API access enabled (SSL recommended)
+- **For Reolink:** Cameras with admin credentials
 
 ## Installation
 
-### 1. Install from PyPI
+> **Note:** This package currently depends on a forked version of `reolink-aio` that includes certificate upload support. Once [PR #145](https://github.com/starkillerOG/reolink_aio/pull/145) is merged upstream, the package will be published to PyPI.
+
+### Install from GitHub (Current)
+
+```bash
+# Install with forked reolink-aio dependency
+pip install git+https://github.com/mabels/certs4mikrotik.git@main
+```
+
+### Install from PyPI (After upstream PR is merged)
 
 ```bash
 pip install certs4mikrotik
 ```
 
-### 2. Configure your routers
+### 2. Configure your devices
 
-Edit `k8s/routers-config.yaml` to include your routers:
+Edit `k8s/certs2mikrotik-config.yaml` to include your devices (see `k8s/certs2mikrotik-config.example.yaml`):
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mikrotik-routers-config
+  name: certs4mikrotik-config
   namespace: default
 data:
-  routers.json: |
+  certs4mikrotik.json: |
     {
-      routers: [
+      "devices": [
         {
-          name: router1,
-          host: 192.168.1.1,
-          port: 8728,
-          username: admin,
-          cert_secret: router1-tls,
-          password_secret: router1-credentials,
-          cert_name: router1-cert
+          "name": "office-router",
+          "device_type": "mikrotik",
+          "host": "192.168.1.1",
+          "port": "8728",
+          "ssl_port": "8729",
+          "username": "admin",
+          "cert_secret": "office-router-tls",
+          "password_secret": "office-router-credentials",
+          "cert_name": "office-router-cert"
+        },
+        {
+          "name": "front-door-camera",
+          "device_type": "reolink",
+          "host": "192.168.1.100",
+          "https_port": "443",
+          "username": "admin",
+          "cert_secret": "front-door-camera-tls",
+          "password_secret": "front-door-camera-credentials",
+          "cert_name": "front-door-camera-cert"
         }
       ]
     }
 ```
 
-### 3. Create router credentials
+### 3. Create device credentials
 
-For each router, create a Kubernetes secret with the admin password:
+For each device, create a Kubernetes secret with the admin password:
 
 ```bash
-kubectl create secret generic router1-credentials \
+# MikroTik router
+kubectl create secret generic office-router-credentials \
   --from-literal=password='your-router-password'
+
+# Reolink camera
+kubectl create secret generic front-door-camera-credentials \
+  --from-literal=password='your-camera-password'
 ```
 
 ### 4. Configure the Let's Encrypt Issuer or ClusterIssuer
@@ -96,20 +126,35 @@ kubectl apply -f k8s/cronjob.yaml
 
 ## Configuration
 
-### Router Configuration
+### Device Configuration
 
-Each router entry in the configuration requires:
+Each device entry in the configuration requires:
+
+#### Common Fields (All Devices)
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `name` | Router identifier (used for DNS) | `router1` |
-| `host` | Router IP address | `192.168.1.1` |
+| `name` | Device identifier (used for DNS) | `office-router` |
+| `device_type` | Device type: `mikrotik` or `reolink` | `mikrotik` |
+| `host` | Device IP address | `192.168.1.1` |
+| `username` | API/admin username | `admin` |
+| `cert_secret` | Kubernetes secret name for TLS cert | `office-router-tls` |
+| `password_secret` | Kubernetes secret name for password | `office-router-credentials` |
+| `cert_name` | Kubernetes Certificate resource name | `office-router-cert` |
+
+#### MikroTik-Specific Fields
+
+| Field | Description | Example |
+|-------|-------------|---------|
 | `port` | Plain API port | `8728` |
 | `ssl_port` | SSL API port (optional, default: 8729) | `8729` |
-| `username` | API username | `admin` |
-| `cert_secret` | Kubernetes secret name for TLS cert | `router1-tls` |
-| `password_secret` | Kubernetes secret name for password | `router1-credentials` |
-| `cert_name` | Certificate name on the router | `router1-cert` |
+
+#### Reolink-Specific Fields
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `https_port` | HTTPS port (optional, default: 443) | `443` |
+| `relogin_delay` | Seconds to wait for re-login after cert clear (optional, default: 5.0) | `5.0` |
 
 ### CronJob Schedule
 
@@ -132,9 +177,11 @@ Modify this in `k8s/cronjob.yaml` to fit your needs.
 5. **Certificates uploaded** to the router via API
 6. **Certificates imported** and marked as trusted on the router
 
-## MikroTik Router Setup
+## Device Setup
 
-### Enable API Access
+### MikroTik Router Setup
+
+#### Enable API Access
 
 For SSL API (recommended):
 ```
@@ -148,12 +195,44 @@ For plain API (less secure):
 set api disabled=no
 ```
 
-### Create API User (Optional)
+#### Create API User (Optional)
 
 For better security, create a dedicated API user:
 ```
 /user group add name=api-users policy=api,read,write,test
 /user add name=certbot group=api-users password=strong-password
+```
+
+### Reolink Camera Setup
+
+#### Requirements
+
+- Camera must be accessible via HTTPS (port 443 by default)
+- Admin credentials required
+- **Important:** Cameras only support RSA certificates (not EC/ECDSA)
+
+#### Certificate Limitations
+
+- Some models (e.g., E1 Pro) may require a reboot after certificate upload to activate
+- The certificate is stored with the name "server" internally on the device
+- Verify your Let's Encrypt Issuer uses RSA key algorithm:
+  ```yaml
+  spec:
+    acme:
+      privateKeySecretRef:
+        name: letsencrypt-prod
+      solvers:
+      - http01:
+          ingress:
+            class: nginx
+  ```
+
+#### Testing
+
+After certificate upload, test HTTPS access:
+```bash
+# Should show the new certificate
+openssl s_client -connect camera-ip:443 -showcerts
 ```
 
 ## Usage
@@ -164,16 +243,16 @@ By default, the script uses namespace-scoped Issuers. To use a ClusterIssuer, pa
 
 ```bash
 # Using default Issuer
-cert2mikrotik --config routers.json --issuer letsencrypt-prod
+cert2mikrotik --config devices.json --issuer letsencrypt-prod
 
 # Using ClusterIssuer
-cert2mikrotik --config routers.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
+cert2mikrotik --config devices.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
 ```
 
 ### Command-line Options
 
 ```
---config            Path to routers config JSON file (required)
+--config            Path to devices config JSON file (required)
 --namespace         Kubernetes namespace (default: default)
 --issuer            cert-manager Issuer name (default: letsencrypt-prod)
 --issuer-kind       Issuer kind: Issuer or ClusterIssuer (default: Issuer)
