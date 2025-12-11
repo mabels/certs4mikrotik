@@ -267,7 +267,7 @@ k8s-cert-to-device --config devices.json --issuer letsencrypt-prod --issuer-kind
 You can manually trigger a job run:
 
 ```bash
-kubectl create job --from=cronjob/cert2mikrotik-upload-job manual-test
+kubectl create job --from=cronjob/certs4devices-job manual-test
 kubectl logs -f job/manual-test
 ```
 
