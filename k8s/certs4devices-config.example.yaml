@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: certs4mikrotik-config
+  name: certs4devices-config
   namespace: default
 data:
-  certs4mikrotik.json: |
+  certs4devices.json: |
     {
       "devices": [
         {

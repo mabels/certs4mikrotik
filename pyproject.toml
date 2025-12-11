@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "certs4mikrotik"
+name = "k8s-cert-to-device"
 version = "1.0.0"
-description = "Automated certificate management for MikroTik routers with cert-manager integration"
+description = "Automated certificate deployment from Kubernetes cert-manager to network devices (MikroTik routers, Reolink cameras)"
 readme = "README.md"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Meno Abels", email = "meno.abels@adviser.com"}
 ]
 license = {text = "Apache-2.0"}
 classifiers = [
@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: System :: Networking",
     "Topic :: Security :: Cryptography",
 ]
-keywords = ["mikrotik", "certificates", "cert-manager", "kubernetes", "automation"]
+keywords = ["kubernetes", "cert-manager", "certificates", "mikrotik", "reolink", "automation", "network-devices"]
 requires-python = ">=3.8"
 dependencies = [
     "librouteros>=3.4.1",
@@ -35,13 +35,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/menabe/certs4mikrotik"
-Repository = "https://github.com/menabe/certs4mikrotik"
-Issues = "https://github.com/menabe/certs4mikrotik/issues"
+Homepage = "https://github.com/mabels/k8s-cert-to-device"
+Repository = "https://github.com/mabels/k8s-cert-to-device"
+Issues = "https://github.com/mabels/k8s-cert-to-device/issues"
 
 [project.scripts]
-cert2mikrotik = "certs4mikrotik.cert2mikrotik:cli_main"
+k8s-cert-to-device = "certs4devices.cert2device:cli_main"
 
 [tool.setuptools]
-packages = ["certs4mikrotik", "certs4mikrotik.uploaders"]
-package-dir = {"certs4mikrotik" = "src"}
+packages = ["certs4devices", "certs4devices.uploaders"]
+package-dir = {"certs4devices" = "src"}

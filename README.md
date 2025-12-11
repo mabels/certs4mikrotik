@@ -1,6 +1,6 @@
-# Certs4MikroTik
+# k8s-cert-to-device
 
-Automated SSL/TLS certificate management and deployment for MikroTik routers and Reolink cameras using Kubernetes, cert-manager, and external-dns.
+Automated SSL/TLS certificate deployment from Kubernetes cert-manager to network devices (MikroTik routers, Reolink cameras, and more).
 
 ## Overview
 
@@ -38,27 +38,27 @@ This project automates the process of:
 
 ```bash
 # Install with forked reolink-aio dependency
-pip install git+https://github.com/mabels/certs4mikrotik.git@main
+pip install git+https://github.com/mabels/k8s-cert-to-device.git@main
 ```
 
 ### Install from PyPI (After upstream PR is merged)
 
 ```bash
-pip install certs4mikrotik
+pip install k8s-cert-to-device
 ```
 
 ### 2. Configure your devices
 
-Edit `k8s/certs2mikrotik-config.yaml` to include your devices (see `k8s/certs2mikrotik-config.example.yaml`):
+Edit `k8s/certs4devices-config.yaml` to include your devices (see `k8s/certs4devices-config.example.yaml`):
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: certs4mikrotik-config
+  name: certs4devices-config
   namespace: default
 data:
-  certs4mikrotik.json: |
+  certs4devices.json: |
     {
       "devices": [
         {
@@ -120,7 +120,7 @@ Update the YAML file with your email address and DNS provider credentials before
 
 ```bash
 kubectl apply -f k8s/service-account.yaml
-kubectl apply -f k8s/certs2mikrotik-config.yaml
+kubectl apply -f k8s/certs4devices-config.yaml
 kubectl apply -f k8s/cronjob.yaml
 ```
 
@@ -243,10 +243,10 @@ By default, the script uses namespace-scoped Issuers. To use a ClusterIssuer, pa
 
 ```bash
 # Using default Issuer
-cert2mikrotik --config devices.json --issuer letsencrypt-prod
+k8s-cert-to-device --config devices.json --issuer letsencrypt-prod
 
 # Using ClusterIssuer
-cert2mikrotik --config devices.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
+k8s-cert-to-device --config devices.json --issuer letsencrypt-prod --issuer-kind ClusterIssuer
 ```
 
 ### Command-line Options

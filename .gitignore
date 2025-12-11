@@ -2,7 +2,7 @@
 *-credentials.yaml
 *-secret.yaml
 secrets/
-k8s/certs2mikrotik-config.yaml
+k8s/certs4devices-config.yaml
 
 # Python
 __pycache__/
