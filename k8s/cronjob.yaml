@@ -21,7 +21,7 @@ spec:
               apt-get update && apt-get install -y --no-install-recommends git
 
               # Install certs4mikrotik from GitHub with forked reolink-aio
-              pip install git+https://github.com/menabe/certs4mikrotik.git@master
+              pip install git+https://github.com/mabels/certs4mikrotik.git@main
 
               # Run the certificate upload script
               cert2mikrotik \
