@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: certs4mikrotik-config
+  namespace: default
+data:
+  certs4mikrotik.json: |
+    {
+      "devices": [
+        {
+          "name": "office-router",
+          "device_type": "mikrotik",
+          "host": "192.168.1.1",
+          "port": "8728",
+          "ssl_port": "8729",
+          "username": "admin",
+          "cert_secret": "office-router-tls",
+          "password_secret": "office-router-credentials",
+          "cert_name": "office-router-cert"
+        },
+        {
+          "name": "front-door-camera",
+          "device_type": "reolink",
+          "host": "192.168.1.100",
+          "https_port": "443",
+          "username": "admin",
+          "cert_secret": "front-door-camera-tls",
+          "password_secret": "front-door-camera-credentials",
+          "cert_name": "server",
+          "relogin_delay": "5.0"
+        },
+        {
+          "name": "garage-camera",
+          "device_type": "reolink",
+          "host": "192.168.1.101",
+          "https_port": "443",
+          "username": "admin",
+          "cert_secret": "garage-camera-tls",
+          "password_secret": "garage-camera-credentials",
+          "cert_name": "server"
+        }
+      ]
+    }

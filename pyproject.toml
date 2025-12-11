@@ -31,6 +31,7 @@ dependencies = [
     "paramiko>=4.0.0",
     "scp>=0.15.0",
     "kubernetes>=34.0.0",
+    "reolink-aio @ git+https://github.com/mabels/reolink_aio.git@feature/certificate-upload",
 ]
 
 [project.urls]

@@ -10,22 +10,19 @@ import ssl
 from typing import Optional
 
 try:
-    import librouteros
-    from librouteros.login import plain, token
-    ROUTEROS_AVAILABLE = True
-except ImportError:
-    ROUTEROS_AVAILABLE = False
-
-try:
     from kubernetes import client, config
     from kubernetes.client.rest import ApiException
     K8S_AVAILABLE = True
 except ImportError:
     K8S_AVAILABLE = False
 
+# Import uploaders
+from uploaders import MikroTikUploader, ReolinkUploader
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Legacy class for backwards compatibility (now uses MikroTikUploader from uploaders module)
 class MikroTikCertUploader:
     def __init__(self, host: str, username: str = "admin", password: str = "", port: int = 8728, ssl_port: int = 8729):
         self.host = host
@@ -323,65 +320,82 @@ class K8sResourceManager:
             logger.error(f"Failed to ensure DNSEndpoint {dns_endpoint_name}: {e}")
             return False
 
-async def process_router(router_config: dict, k8s_manager: K8sResourceManager, ensure_resources: bool = True, issuer_name: str = "letsencrypt-prod", issuer_kind: str = "Issuer", domain_suffix: str = ".adviser.com") -> bool:
-    """Process a single router from configuration"""
-    router_name = router_config['name']
+async def process_device(device_config: dict, k8s_manager: K8sResourceManager, ensure_resources: bool = True, issuer_name: str = "letsencrypt-prod", issuer_kind: str = "Issuer", domain_suffix: str = ".adviser.com") -> bool:
+    """Process a single device (router/camera) from configuration"""
+    device_name = device_config['name']
+    device_type = device_config['device_type']
 
     print(f"\n{'='*60}")
-    print(f"Processing: {router_name}")
-    print(f"Host: {router_config['host']}:{router_config['port']}")
-    print(f"Certificate Secret: {router_config['cert_secret']}")
-    print(f"Password Secret: {router_config['password_secret']}")
+    print(f"Processing: {device_name}")
+    print(f"Device Type: {device_type}")
+    print(f"Host: {device_config['host']}")
+    print(f"Certificate Secret: {device_config['cert_secret']}")
+    print(f"Password Secret: {device_config['password_secret']}")
     print(f"{'='*60}\n")
 
     try:
         # Step 1: Ensure Kubernetes resources exist
         if ensure_resources:
             logger.info("Ensuring Kubernetes resources...")
-            cert_ok = k8s_manager.ensure_certificate(router_config, issuer_name, issuer_kind, domain_suffix)
-            dns_ok = k8s_manager.ensure_dns_endpoint(router_config, domain_suffix)
-            
+            cert_ok = k8s_manager.ensure_certificate(device_config, issuer_name, issuer_kind, domain_suffix)
+            dns_ok = k8s_manager.ensure_dns_endpoint(device_config, domain_suffix)
+
             if not cert_ok or not dns_ok:
                 logger.warning("Some resources failed to create/update, but continuing...")
-        
+
         # Step 2: Fetch password from Kubernetes secret
-        logger.info(f"Fetching password from secret: {router_config['password_secret']}")
-        password = k8s_manager.get_password(router_config['password_secret'])
-        
+        logger.info(f"Fetching password from secret: {device_config['password_secret']}")
+        password = k8s_manager.get_password(device_config['password_secret'])
+
         # Step 3: Fetch TLS certificate from Kubernetes secret
-        logger.info(f"Fetching TLS certificate from secret: {router_config['cert_secret']}")
-        cert_content, key_content = k8s_manager.get_tls_cert(router_config['cert_secret'])
-        
-        # Step 4: Upload to router
-        ssl_port = int(router_config.get('ssl_port', 8729))
-        uploader = MikroTikCertUploader(
-            host=router_config['host'],
-            username=router_config['username'],
-            password=password,
-            port=int(router_config['port']),
-            ssl_port=ssl_port
-        )
-        
-        success = await uploader.upload_via_api(
-            cert_content, 
-            key_content, 
-            router_config['cert_name']
-        )
-        
-        if success:
-            print(f"✅ Successfully uploaded certificate to {router_name}\n")
+        logger.info(f"Fetching TLS certificate from secret: {device_config['cert_secret']}")
+        cert_content, key_content = k8s_manager.get_tls_cert(device_config['cert_secret'])
+
+        # Step 4: Create appropriate uploader based on device type
+        if device_type.lower() == 'mikrotik':
+            ssl_port = int(device_config.get('ssl_port', 8729))
+            port = int(device_config.get('port', 8728))
+            uploader = MikroTikUploader(
+                host=device_config['host'],
+                username=device_config['username'],
+                password=password,
+                port=port,
+                ssl_port=ssl_port
+            )
+        elif device_type.lower() == 'reolink':
+            uploader = ReolinkUploader(
+                host=device_config['host'],
+                username=device_config['username'],
+                password=password,
+                port=int(device_config.get('https_port', 443)),
+                relogin_delay=float(device_config.get('relogin_delay', 5.0))
+            )
         else:
-            print(f"❌ Failed to upload certificate to {router_name}\n")
-            
+            logger.error(f"Unsupported device type: {device_type}")
+            print(f"❌ Unsupported device type: {device_type}\n")
+            return False
+
+        # Step 5: Upload certificate to device
+        success = await uploader.upload_certificate(
+            cert_content,
+            key_content,
+            device_config['cert_name']
+        )
+
+        if success:
+            print(f"✅ Successfully uploaded certificate to {device_name}\n")
+        else:
+            print(f"❌ Failed to upload certificate to {device_name}\n")
+
         return success
     except Exception as e:
-        logger.error(f"Failed to process router {router_name}: {e}")
-        print(f"❌ Failed to process {router_name}: {e}\n")
+        logger.error(f"Failed to process {device_type} device {device_name}: {e}")
+        print(f"❌ Failed to process {device_name}: {e}\n")
         return False
 
 async def main():
-    parser = argparse.ArgumentParser(description='Upload SSL certificates to MikroTik routers')
-    parser.add_argument('--config', required=True, help='Path to routers config JSON file')
+    parser = argparse.ArgumentParser(description='Upload SSL certificates to network devices (routers/cameras)')
+    parser.add_argument('--config', required=True, help='Path to devices config JSON file')
     parser.add_argument('--namespace', default='default', help='Kubernetes namespace')
     parser.add_argument('--ensure-resources', action='store_true', default=True, help='Create/update Certificate and DNSEndpoint resources')
     parser.add_argument('--skip-resources', action='store_true', help='Skip creating/updating Certificate and DNSEndpoint resources')
@@ -389,42 +403,42 @@ async def main():
     parser.add_argument('--issuer-kind', default='Issuer', choices=['Issuer', 'ClusterIssuer'], help='cert-manager Issuer kind (Issuer or ClusterIssuer)')
     parser.add_argument('--domain-suffix', default='.adviser.com', help='Domain suffix for DNS names')
     parser.add_argument('--verbose', '-v', action='store_true')
-    
+
     args = parser.parse_args()
-    
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     # Check if kubernetes client is available
     if not K8S_AVAILABLE:
         logger.error("kubernetes python client not available. Install with: pip install kubernetes")
         sys.exit(1)
-    
-    # Load router configuration
+
+    # Load device configuration
     try:
         with open(args.config, 'r') as f:
             config_data = json.load(f)
     except Exception as e:
         logger.error(f"Failed to load config file: {e}")
         sys.exit(1)
-    
-    routers = config_data.get('routers', [])
-    
-    if not routers:
-        logger.error("No routers found in configuration")
+
+    devices = config_data.get('devices', [])
+
+    if not devices:
+        logger.error("No devices found in configuration")
         sys.exit(1)
-    
+
     # Initialize Kubernetes resource manager
     try:
         k8s_manager = K8sResourceManager(namespace=args.namespace)
     except Exception as e:
         logger.error(f"Failed to initialize Kubernetes client: {e}")
         sys.exit(1)
-    
+
     ensure_resources = args.ensure_resources and not args.skip_resources
 
     print(f"\n{'='*60}")
-    print(f"Starting certificate upload for {len(routers)} router(s)")
+    print(f"Starting certificate upload for {len(devices)} device(s)")
     print(f"Kubernetes namespace: {args.namespace}")
     print(f"Issuer: {args.issuer}")
     print(f"Issuer kind: {args.issuer_kind}")
@@ -432,34 +446,34 @@ async def main():
     print(f"Auto-create resources: {ensure_resources}")
     print(f"{'='*60}\n")
 
-    # Process each router
+    # Process each device
     results = []
-    for router in routers:
-        success = await process_router(
-            router,
+    for device in devices:
+        success = await process_device(
+            device,
             k8s_manager,
             ensure_resources=ensure_resources,
             issuer_name=args.issuer,
             issuer_kind=args.issuer_kind,
             domain_suffix=args.domain_suffix
         )
-        results.append((router['name'], success))
-    
+        results.append((device['name'], success))
+
     # Summary
     print(f"\n{'='*60}")
     print("SUMMARY")
     print(f"{'='*60}")
-    
-    for router_name, success in results:
+
+    for device_name, success in results:
         status = "✅ SUCCESS" if success else "❌ FAILED"
-        print(f"{router_name}: {status}")
-    
+        print(f"{device_name}: {status}")
+
     print(f"{'='*60}\n")
-    
+
     # Exit with error if any failed
     if not all(success for _, success in results):
         sys.exit(1)
-    
+
     logger.info("All certificate uploads completed successfully!")
 
 def cli_main():

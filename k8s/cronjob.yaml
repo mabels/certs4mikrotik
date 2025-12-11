@@ -17,12 +17,15 @@ spec:
             - |
               set -xe
 
-              # Install certs4mikrotik from PyPI
-              pip install certs4mikrotik
+              # Install git (needed for git+https dependencies)
+              apt-get update && apt-get install -y --no-install-recommends git
+
+              # Install certs4mikrotik from GitHub with forked reolink-aio
+              pip install git+https://github.com/menabe/certs4mikrotik.git@master
 
               # Run the certificate upload script
               cert2mikrotik \
-                --config /config/routers.json \
+                --config /config/certs4mikrotik.json \
                 --namespace default \
                 --issuer letsencrypt-prod \
                 --domain-suffix .adviser.com \
@@ -47,7 +50,7 @@ spec:
           volumes:
           - configMap:
               defaultMode: 420
-              name: mikrotik-routers-config
+              name: certs4mikrotik-config
             name: router-config
   schedule: 0 2 * * 0,3
   successfulJobsHistoryLimit: 3

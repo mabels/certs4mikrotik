@@ -1,7 +1,8 @@
-# Kubernetes secrets
+# Kubernetes secrets and configs
 *-credentials.yaml
 *-secret.yaml
 secrets/
+k8s/certs2mikrotik-config.yaml
 
 # Python
 __pycache__/
