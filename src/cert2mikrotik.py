@@ -17,7 +17,7 @@ except ImportError:
     K8S_AVAILABLE = False
 
 # Import uploaders
-from uploaders import MikroTikUploader, ReolinkUploader
+from certs4mikrotik.uploaders import MikroTikUploader, ReolinkUploader
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

@@ -43,5 +43,5 @@ Issues = "https://github.com/menabe/certs4mikrotik/issues"
 cert2mikrotik = "certs4mikrotik.cert2mikrotik:cli_main"
 
 [tool.setuptools]
-packages = ["certs4mikrotik"]
+packages = ["certs4mikrotik", "certs4mikrotik.uploaders"]
 package-dir = {"certs4mikrotik" = "src"}
